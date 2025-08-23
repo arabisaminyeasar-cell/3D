@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Three.js 3D Background</title>
+  <style>
+    body { margin: 0; overflow: hidden; height: 100vh; background: #0d0d0d; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
+
+// Scene
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+// ----- Camera Controls -----
+let radius = 5, theta = 0, phi = Math.PI / 2;
+const MIN_RADIUS = 1, MAX_RADIUS = 100;
+const ROTATE_SPEED = 0.005, ZOOM_FACTOR = 1.1;
+
+function updateCamera(r = radius) {
+  const safeRadius = Math.abs(r); // prevent flipping
+  const x = safeRadius * Math.sin(phi) * Math.sin(theta);
+  const y = safeRadius * Math.cos(phi);
+  const z = safeRadius * Math.sin(phi) * Math.cos(theta);
+  camera.position.set(x, y, z);
+  camera.lookAt(0, 0, 0);
+}
+updateCamera();
+
+let isDragging = false, lastX = 0, lastY = 0;
+renderer.domElement.addEventListener('mousedown', e => {
+  isDragging = true; lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  theta -= dx * ROTATE_SPEED;
+  phi -= dy * ROTATE_SPEED;
+  phi = Math.max(0.001, Math.min(Math.PI - 0.001, phi));
+  lastX = e.clientX; lastY = e.clientY;
+  updateCamera();
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.deltaY > 0) radius = Math.min(MAX_RADIUS, radius * ZOOM_FACTOR);
+  else radius = Math.max(MIN_RADIUS, radius / ZOOM_FACTOR);
+  updateCamera();
+}, { passive: false });
+
+// Touch controls
+let touchMode = null, lastTouchX = 0, lastTouchY = 0, lastPinchDist = 0;
+const getDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+renderer.domElement.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    touchMode = 'rotate';
+    lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+  } else if (e.touches.length === 2) {
+    touchMode = 'zoom'; lastPinchDist = getDist(e.touches[0], e.touches[1]);
+  }
+}, { passive: false });
+renderer.domElement.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (touchMode === 'rotate' && e.touches.length === 1) {
+    const t = e.touches[0];
+    const dx = t.clientX - lastTouchX, dy = t.clientY - lastTouchY;
+    theta -= dx * ROTATE_SPEED; phi -= dy * ROTATE_SPEED;
+    phi = Math.max(0.001, Math.min(Math.PI - 0.001, phi));
+    lastTouchX = t.clientX; lastTouchY = t.clientY;
+    updateCamera();
+  } else if (touchMode === 'zoom' && e.touches.length === 2) {
+    const dist = getDist(e.touches[0], e.touches[1]);
+    if (dist && lastPinchDist) {
+      const scale = lastPinchDist / dist;
+      radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radius * scale));
+      lastPinchDist = dist;
+      updateCamera();
+    }
+  }
+}, { passive: false });
+renderer.domElement.addEventListener('touchend', () => { touchMode = null; }, { passive: true });
+
+// -------- Particles --------
+const PARTICLE_DENSITY = 1.5; // Adjust as needed
+let particleCount, geometry, particles;
+let baseHues = [], speeds = [], phases = [];
+
+function initParticles() {
+  const screenArea = window.innerWidth * window.innerHeight;
+  particleCount = Math.floor((screenArea / 500) * PARTICLE_DENSITY);
+
+  geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const colors = new Float32Array(particleCount * 3);
+  const sizes = new Float32Array(particleCount);
+
+  baseHues = new Float32Array(particleCount);
+  speeds = new Float32Array(particleCount);
+  phases = new Float32Array(particleCount);
+
+  for (let i = 0; i < particleCount; i++) {
+    const r = Math.cbrt(Math.random()) * 20;
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
+
+    baseHues[i] = Math.random();
+    const c = new THREE.Color().setHSL(baseHues[i], 1.0, 0.6);
+    colors[i * 3]     = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+
+    sizes[i] = 0.15;
+    phases[i] = Math.random() * Math.PI * 2;
+    speeds[i] = 0.5 + Math.random() * 1.5;
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  if (!particles) {
+    const starTexture = createStarTexture();
+    const material = new THREE.ShaderMaterial({
+      uniforms: { pointTexture: { value: starTexture } },
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      vertexShader: `
+        attribute float size;
+        varying vec3 vColor;
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        varying vec3 vColor;
+        void main() {
+          gl_FragColor = vec4(vColor, 1.0) * texture2D(pointTexture, gl_PointCoord);
+          if (gl_FragColor.a < 0.1) discard;
+        }
+      `
+    });
+    particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+  } else {
+    scene.remove(particles);
+    particles.geometry.dispose();
+    particles.geometry = geometry;
+    scene.add(particles);
+  }
+}
+
+function createStarTexture() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.translate(size / 2, size / 2);
+  ctx.beginPath();
+  const spikes = 5;
+  const outerRadius = size / 2.2;
+  const innerRadius = size / 5;
+  for (let i = 0; i < spikes * 2; i++) {
+    const angle = (i * Math.PI) / spikes;
+    const r = i % 2 === 0 ? outerRadius : innerRadius;
+    ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "white";
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = "white";
+  ctx.fill();
+
+  return new THREE.CanvasTexture(canvas);
+}
+
+initParticles();
+
+// -------- Animation --------
+let hue = 0;
+let time = 0;
+const tmpColor = new THREE.Color();
+
+// Ease function for smooth breathing
+function easeInOutSine(t) {
+  return -(Math.cos(Math.PI * t) - 1) / 2;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  // particle rotation
+  particles.rotation.y += 0.0012;
+  particles.rotation.x += 0.0005;
+
+  // hue shift
+  hue = (hue + 0.5) % 360;
+  const hueOffset = hue / 360;
+  const colorAttr = geometry.attributes.color.array;
+  for (let i = 0; i < particleCount; i++) {
+    const h = (baseHues[i] + hueOffset) % 1;
+    tmpColor.setHSL(h, 1.0, 0.6);
+    const idx = i * 3;
+    colorAttr[idx]     = tmpColor.r;
+    colorAttr[idx + 1] = tmpColor.g;
+    colorAttr[idx + 2] = tmpColor.b;
+  }
+  geometry.attributes.color.needsUpdate = true;
+
+  // twinkle
+  time += 0.01;
+  const sizeAttr = geometry.attributes.size.array;
+  for (let i = 0; i < particleCount; i++) {
+    sizeAttr[i] = 0.3 + Math.sin(time * speeds[i] + phases[i]) * 0.2;
+  }
+  geometry.attributes.size.needsUpdate = true;
+
+  // --- Smooth Breathing Zoom ---
+  const rawBreathing = Math.pow(Math.sin(time * 0.05), 2);
+  const eased = easeInOutSine(rawBreathing);
+  let breathing = -20 + eased * 40;
+
+  const centerDistance = Math.abs(breathing);
+  let slowFactor = Math.pow(centerDistance / 25, 0.33);
+  slowFactor = Math.min(Math.max(slowFactor, 0.15), 1);
+
+  breathing *= slowFactor;
+
+  updateCamera(radius * breathing);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// Handle window resize
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  // Reinitialize particles to match new screen size
+  initParticles();
+  updateCamera();
+});
+</script>
+</body>
+</html>
