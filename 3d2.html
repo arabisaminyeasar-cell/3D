@@ -22,7 +22,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-// ----- Camera Controls -----
+// ------- Camera Controls -------
 let radius = 5, theta = 0, phi = Math.PI / 2;
 const MIN_RADIUS = 1, MAX_RADIUS = 100;
 const ROTATE_SPEED = 0.005, ZOOM_FACTOR = 1.1;
@@ -59,7 +59,7 @@ renderer.domElement.addEventListener('wheel', e => {
   updateCamera();
 }, { passive: false });
 
-// Touch controls
+// ------- Touch controls -------
 let touchMode = null, lastTouchX = 0, lastTouchY = 0, lastPinchDist = 0;
 const getDist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
 renderer.domElement.addEventListener('touchstart', e => {
@@ -92,7 +92,7 @@ renderer.domElement.addEventListener('touchmove', e => {
 }, { passive: false });
 renderer.domElement.addEventListener('touchend', () => { touchMode = null; }, { passive: true });
 
-// -------- Particles --------
+// ------- Particles -------
 const PARTICLE_DENSITY = 1.5; // Adjust as needed
 let particleCount, geometry, particles;
 let baseHues = [], speeds = [], phases = [];
@@ -199,12 +199,11 @@ function createStarTexture() {
 
 initParticles();
 
-// -------- Animation --------
+// ------- Animations -------
 let hue = 0;
 let time = 0;
 const tmpColor = new THREE.Color();
 
-// Ease function for smooth breathing
 function easeInOutSine(t) {
   return -(Math.cos(Math.PI * t) - 1) / 2;
 }
@@ -212,11 +211,9 @@ function easeInOutSine(t) {
 function animate() {
   requestAnimationFrame(animate);
 
-  // particle rotation
   particles.rotation.y += 0.0012;
   particles.rotation.x += 0.0005;
 
-  // hue shift
   hue = (hue + 0.5) % 360;
   const hueOffset = hue / 360;
   const colorAttr = geometry.attributes.color.array;
@@ -230,7 +227,6 @@ function animate() {
   }
   geometry.attributes.color.needsUpdate = true;
 
-  // twinkle
   time += 0.01;
   const sizeAttr = geometry.attributes.size.array;
   for (let i = 0; i < particleCount; i++) {
@@ -238,30 +234,21 @@ function animate() {
   }
   geometry.attributes.size.needsUpdate = true;
 
-  // --- Smooth Breathing Zoom ---
-  const rawBreathing = Math.pow(Math.sin(time * 0.05), 2);
-  const eased = easeInOutSine(rawBreathing);
-  let breathing = -20 + eased * 40;
+  const cycle = time * 0.1;
+  const wave = Math.cos(cycle);
+  const breathing = 50 + (wave * 50);
 
-  const centerDistance = Math.abs(breathing);
-  let slowFactor = Math.pow(centerDistance / 25, 0.33);
-  slowFactor = Math.min(Math.max(slowFactor, 0.15), 1);
-
-  breathing *= slowFactor;
-
-  updateCamera(radius * breathing);
+  updateCamera(breathing);
 
   renderer.render(scene, camera);
 }
 animate();
 
-// Handle window resize
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 
-  // Reinitialize particles to match new screen size
   initParticles();
   updateCamera();
 });
